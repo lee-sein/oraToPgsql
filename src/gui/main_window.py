@@ -696,6 +696,24 @@ class MainWindow(QMainWindow):
         metrics_layout.addStretch()
         layout.addLayout(metrics_layout)
 
+        selection_hint_frame = QFrame()
+        selection_hint_frame.setStyleSheet(
+            "background-color: #eef3ff; border: 1px solid #c7d5ff; border-radius: 10px; padding: 12px 16px;"
+        )
+        selection_hint_layout = QHBoxLayout(selection_hint_frame)
+        selection_hint_layout.setSpacing(12)
+
+        self.selected_table_summary = QLabel("동기화를 시작하기 전에 테이블을 먼저 선택하세요.")
+        self.selected_table_summary.setStyleSheet("color: #2f3640; font-size: 13px;")
+        selection_hint_layout.addWidget(self.selected_table_summary, 1)
+
+        self.open_table_selection_btn = QPushButton("테이블 선택하기")
+        self.open_table_selection_btn.setStyleSheet("padding: 8px 16px;")
+        self.open_table_selection_btn.clicked.connect(self._go_to_table_selection)
+        selection_hint_layout.addWidget(self.open_table_selection_btn, 0, Qt.AlignRight)
+
+        layout.addWidget(selection_hint_frame)
+
         content_layout = QHBoxLayout()
         content_layout.setSpacing(20)
 
@@ -870,6 +888,11 @@ class MainWindow(QMainWindow):
         label.setStyleSheet("color: #7f8c8d; font-size: 12px; font-weight: 600;")
         return label
 
+    def _go_to_table_selection(self):
+        """테이블 선택 탭으로 이동"""
+        table_tab_index = 2  # Home=0, Connection=1, Tables=2
+        self.tabs.setCurrentIndex(table_tab_index)
+
     def _reset_sync_status_ui(self):
         """동기화 상태 UI 초기화"""
         self._set_status_card_state(False, "대기 중")
@@ -880,6 +903,8 @@ class MainWindow(QMainWindow):
         self.sync_last_sync_value.setText("—")
         self.sync_next_sync_value.setText("—")
         self._set_last_error(None)
+        if hasattr(self, "selected_table_summary"):
+            self.selected_table_summary.setText("동기화를 시작하기 전에 테이블을 먼저 선택하세요.")
 
     def _set_status_card_state(self, is_running, label=None):
         """상태 카드 색상 및 텍스트 업데이트"""
@@ -1190,6 +1215,12 @@ class MainWindow(QMainWindow):
                     detail += f"  - {unique}{idx['name']}: {', '.join(idx['columns'])}\n"
 
             self.table_detail_text.setText(detail)
+            if hasattr(self, "selected_table_summary"):
+                self.selected_table_summary.setText(f"선택된 테이블: {table_name}")
+            if hasattr(self, "sync_current_table_value") and not (
+                self.sync_manager and self.sync_manager.status.is_running
+            ):
+                self.sync_current_table_value.setText(table_name)
 
         except Exception as e:
             self.log(f"테이블 상세 정보 조회 오류: {str(e)}")
