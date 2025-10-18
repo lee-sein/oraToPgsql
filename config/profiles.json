@@ -1,0 +1,22 @@
+{
+  "default": {
+    "oracle": {
+      "host": "localhost",
+      "port": "1521",
+      "sid": "",
+      "service_name": "XE",
+      "user": "oracle_user",
+      "password": "gAAAAABo86IsEnpboLr_G4EIuW_A1XU3GF1IWxlOn57-tGx8JZcpuewyfrGFeRWjrrn9OWOdyDTnsZKM1TXf46r9J2uIv_tsHg==",
+      "thick_mode": true,
+      "instant_client_dir": "instantclient"
+    },
+    "postgres": {
+      "host": "localhost",
+      "port": "5432",
+      "database": "postgres",
+      "schema": "public",
+      "user": "postgres_user",
+      "password": "gAAAAABo86IsEnpboLr_G4EIuW_A1XU3GF1IWxlOn57-tGx8JZcpuewyfrGFeRWjrrn9OWOdyDTnsZKM1TXf46r9J2uIv_tsHg=="
+    }
+  }
+}

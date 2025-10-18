@@ -8,7 +8,8 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QTabWidget, QLabel, QLineEdit, QPushButton, QTextEdit,
     QTableWidget, QTableWidgetItem, QComboBox, QSpinBox,
-    QMessageBox, QProgressBar, QGroupBox, QCheckBox, QFileDialog
+    QMessageBox, QProgressBar, QGroupBox, QCheckBox, QFileDialog,
+    QFrame, QFormLayout, QGridLayout, QHeaderView, QAbstractItemView
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFont
@@ -571,7 +572,7 @@ class MainWindow(QMainWindow):
         self.table_list = QTableWidget()
         self.table_list.setColumnCount(3)
         self.table_list.setHorizontalHeaderLabels(["Table Name", "Rows", "Comment"])
-        self.table_list.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table_list.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table_list.setSelectionMode(QTableWidget.SingleSelection)
         self.table_list.itemSelectionChanged.connect(self.on_table_selected)
         layout.addWidget(self.table_list)
@@ -654,129 +655,262 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(tab, "3. Migration")
 
     def create_sync_tab(self):
-        """실시간 동기화 탭"""
+        """동기화 탭 생성"""
         tab = QWidget()
         layout = QVBoxLayout()
+        layout.setSpacing(20)
         tab.setLayout(layout)
 
-        # 동기화 설정
-        sync_settings_group = QGroupBox("Synchronization Settings")
-        sync_settings_layout = QVBoxLayout()
-        sync_settings_group.setLayout(sync_settings_layout)
+        self.status_card_style_template = (
+            "QFrame#StatusCard {{"
+            "background-color: {bg};"
+            "border: 1px solid #dcdde1;"
+            "border-radius: 12px;"
+            "padding: 18px;"
+            "}}"
+        )
 
-        # 동기화 간격 설정
-        interval_layout = QHBoxLayout()
-        interval_layout.addWidget(QLabel("Sync Interval:"))
+        title_label = QLabel("자동 동기화")
+        title_label.setStyleSheet("font-size: 22px; font-weight: 700; color: #2f3640;")
+        layout.addWidget(title_label)
+
+        subtitle_label = QLabel("Oracle과 PostgreSQL 사이의 동기화 현황을 한눈에 확인하세요.")
+        subtitle_label.setWordWrap(True)
+        subtitle_label.setStyleSheet("color: #636e72; font-size: 13px;")
+        layout.addWidget(subtitle_label)
+
+        metrics_layout = QHBoxLayout()
+        metrics_layout.setSpacing(16)
+        self.sync_state_value, self.sync_status_card = self._create_status_card(
+            metrics_layout, "상태", "대기 중"
+        )
+        self.sync_current_table_value, _ = self._create_status_card(
+            metrics_layout, "대상 테이블", "미선택"
+        )
+        self.sync_total_runs_value, _ = self._create_status_card(
+            metrics_layout, "누적 실행", "0회"
+        )
+        self.sync_success_rate_value, _ = self._create_status_card(
+            metrics_layout, "성공률", "—"
+        )
+        metrics_layout.addStretch()
+        layout.addLayout(metrics_layout)
+
+        content_layout = QHBoxLayout()
+        content_layout.setSpacing(20)
+
+        config_group = QGroupBox("동기화 설정")
+        config_group_layout = QVBoxLayout()
+        config_group.setLayout(config_group_layout)
+
+        config_form = QFormLayout()
+        config_form.setSpacing(12)
+        config_form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+
         self.sync_interval_combo = QComboBox()
-        self.sync_interval_combo.addItems(["10 minutes", "30 minutes", "1 hour", "2 hours", "6 hours", "12 hours", "24 hours"])
-        self.sync_interval_combo.setCurrentIndex(0)  # 기본 10분
-        interval_layout.addWidget(self.sync_interval_combo)
-        interval_layout.addStretch()
-        sync_settings_layout.addLayout(interval_layout)
+        self.sync_interval_combo.addItems([
+            "10 minutes",
+            "30 minutes",
+            "1 hour",
+            "2 hours",
+            "6 hours",
+            "12 hours",
+            "24 hours"
+        ])
+        self.sync_interval_combo.setCurrentIndex(0)
+        config_form.addRow("동기화 주기", self.sync_interval_combo)
 
-        # 동기화 모드 선택
-        mode_layout = QHBoxLayout()
-        mode_layout.addWidget(QLabel("Sync Mode:"))
         self.sync_mode_combo = QComboBox()
         self.sync_mode_combo.addItems([
-            "Incremental (증분) - 변경된 데이터만",
-            "Full (전체) - 전체 재동기화",
-            "Delete & Insert - 테이블 재생성"
+            "Incremental (증분) - 변경분만 반영",
+            "Full (전체) - 전체 데이터 재동기화",
+            "Delete & Insert - 전체 삭제 후 재삽입"
         ])
-        self.sync_mode_combo.setCurrentIndex(0)  # 기본 증분
+        self.sync_mode_combo.setCurrentIndex(0)
         self.sync_mode_combo.currentIndexChanged.connect(self.on_sync_mode_changed)
-        mode_layout.addWidget(self.sync_mode_combo)
-        mode_layout.addStretch()
-        sync_settings_layout.addLayout(mode_layout)
+        config_form.addRow("동기화 모드", self.sync_mode_combo)
 
-        # 모드 설명 레이블
         self.mode_description = QLabel()
         self.mode_description.setWordWrap(True)
-        self.mode_description.setStyleSheet("color: #666; padding: 5px; background-color: #f0f0f0; border-radius: 3px;")
-        self.update_mode_description(0)
-        sync_settings_layout.addWidget(self.mode_description)
+        self.mode_description.setStyleSheet("color: #636e72; background-color: #f0f4ff; border-radius: 6px; padding: 8px;")
+        config_form.addRow("모드 안내", self.mode_description)
 
-        # 타임스탬프 컬럼 (증분 동기화용)
-        timestamp_layout = QHBoxLayout()
-        timestamp_layout.addWidget(QLabel("Timestamp Column:"))
         self.timestamp_column_input = QLineEdit()
-        self.timestamp_column_input.setPlaceholderText("예: CREATED_DATE, UPDATED_AT (증분 동기화 시 필수, DATE/TIMESTAMP/VARCHAR2 모두 지원, VARCHAR2는 YYYY-MM-DD 형식)")
-        timestamp_layout.addWidget(self.timestamp_column_input)
-        sync_settings_layout.addLayout(timestamp_layout)
+        self.timestamp_column_input.setPlaceholderText("예: CREATED_DATE, UPDATED_AT (증분 동기화에 필요)")
+        config_form.addRow("타임스탬프 컬럼", self.timestamp_column_input)
 
-        # 누락 데이터 동기화 (신규)
-        catchup_layout = QVBoxLayout()
-        catchup_label = QLabel("📅 누락 데이터 동기화 (마이그레이션 후 간격이 있을 때)")
-        catchup_label.setStyleSheet("font-weight: bold; color: #0066cc;")
-        catchup_layout.addWidget(catchup_label)
+        catchup_row_widget = QWidget()
+        catchup_row_layout = QHBoxLayout()
+        catchup_row_layout.setContentsMargins(0, 0, 0, 0)
+        catchup_row_layout.setSpacing(8)
+        catchup_row_widget.setLayout(catchup_row_layout)
 
-        catchup_date_layout = QHBoxLayout()
-        catchup_date_layout.addWidget(QLabel("마지막 동기화 시간:"))
         self.catchup_datetime_input = QLineEdit()
-        self.catchup_datetime_input.setPlaceholderText("YYYY-MM-DD HH:MI:SS (예: 2024-10-15 14:30:00) 또는 YYYY-MM-DD (예: 2024-10-15)")
-        catchup_date_layout.addWidget(self.catchup_datetime_input)
+        self.catchup_datetime_input.setPlaceholderText("YYYY-MM-DD 또는 YYYY-MM-DD HH:MM:SS")
+        catchup_row_layout.addWidget(self.catchup_datetime_input)
 
-        self.catchup_btn = QPushButton("누락 데이터 동기화 실행")
+        self.catchup_btn = QPushButton("누락분 채우기")
         self.catchup_btn.clicked.connect(self.run_catchup_sync)
         self.catchup_btn.setStyleSheet("background-color: #FF9800; color: white; font-weight: bold;")
-        catchup_date_layout.addWidget(self.catchup_btn)
+        catchup_row_layout.addWidget(self.catchup_btn)
 
-        catchup_layout.addLayout(catchup_date_layout)
+        config_form.addRow("Catch-up 시작", catchup_row_widget)
 
-        catchup_help = QLabel("💡 팁: 마이그레이션 직후 시간을 입력하면 그 사이의 데이터를 한번에 동기화합니다")
-        catchup_help.setStyleSheet("color: #666; font-size: 11px;")
-        catchup_layout.addWidget(catchup_help)
+        catchup_help = QLabel("초기 마이그레이션 이후 누락된 데이터를 지정 시점부터 다시 채웁니다.")
+        catchup_help.setStyleSheet("color: #95a5a6; font-size: 12px;")
+        catchup_help.setWordWrap(True)
 
-        sync_settings_layout.addLayout(catchup_layout)
+        config_group_layout.addLayout(config_form)
+        config_group_layout.addWidget(catchup_help)
 
-        layout.addWidget(sync_settings_group)
-
-        # 동기화 제어 버튼
         button_layout = QHBoxLayout()
-        self.start_sync_btn = QPushButton("Start Sync")
+        self.start_sync_btn = QPushButton("동기화 시작")
         self.start_sync_btn.clicked.connect(self.start_sync)
-        self.start_sync_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; padding: 10px;")
+        self.start_sync_btn.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; padding: 12px 24px;")
         button_layout.addWidget(self.start_sync_btn)
 
-        self.stop_sync_btn = QPushButton("Stop Sync")
+        self.stop_sync_btn = QPushButton("중지")
         self.stop_sync_btn.clicked.connect(self.stop_sync)
         self.stop_sync_btn.setEnabled(False)
-        self.stop_sync_btn.setStyleSheet("background-color: #f44336; color: white; font-weight: bold; padding: 10px;")
+        self.stop_sync_btn.setStyleSheet("background-color: #f44336; color: white; font-weight: bold; padding: 12px 24px;")
         button_layout.addWidget(self.stop_sync_btn)
+        button_layout.addStretch()
+        config_group_layout.addLayout(button_layout)
 
-        layout.addLayout(button_layout)
+        content_layout.addWidget(config_group, 2)
 
-        # 동기화 상태 표시
-        status_group = QGroupBox("Synchronization Status")
-        status_layout = QVBoxLayout()
-        status_group.setLayout(status_layout)
+        status_group = QGroupBox("실시간 상태")
+        status_group_layout = QVBoxLayout()
+        status_group.setLayout(status_group_layout)
 
-        self.sync_status_text = QTextEdit()
-        self.sync_status_text.setReadOnly(True)
-        self.sync_status_text.setMaximumHeight(200)
-        self.sync_status_text.setText("동기화가 시작되지 않았습니다.")
-        status_layout.addWidget(self.sync_status_text)
+        status_grid = QGridLayout()
+        status_grid.setVerticalSpacing(12)
+        status_grid.setHorizontalSpacing(16)
 
-        layout.addWidget(status_group)
+        status_grid.addWidget(self._create_status_caption("성공 / 실패"), 0, 0)
+        self.sync_success_breakdown_value = QLabel("0 / 0")
+        self.sync_success_breakdown_value.setStyleSheet("font-size: 15px; font-weight: 600; color: #2f3640;")
+        status_grid.addWidget(self.sync_success_breakdown_value, 0, 1)
 
-        # 동기화 히스토리
-        history_group = QGroupBox("Sync History")
+        status_grid.addWidget(self._create_status_caption("마지막 동기화"), 1, 0)
+        self.sync_last_sync_value = QLabel("—")
+        self.sync_last_sync_value.setStyleSheet("font-size: 14px; color: #2f3640;")
+        status_grid.addWidget(self.sync_last_sync_value, 1, 1)
+
+        status_grid.addWidget(self._create_status_caption("다음 실행 예정"), 2, 0)
+        self.sync_next_sync_value = QLabel("—")
+        self.sync_next_sync_value.setStyleSheet("font-size: 14px; color: #2f3640;")
+        status_grid.addWidget(self.sync_next_sync_value, 2, 1)
+
+        status_group_layout.addLayout(status_grid)
+
+        self.sync_error_style_muted = (
+            "color: #636e72; font-size: 12px; border: 1px dashed #dcdde1; "
+            "background-color: #f8f9fb; border-radius: 6px; padding: 8px;"
+        )
+        self.sync_error_style_alert = (
+            "color: #d35400; font-size: 12px; border: 1px solid #ffb074; "
+            "background-color: #fff4e6; border-radius: 6px; padding: 8px;"
+        )
+
+        self.sync_last_error_label = QLabel()
+        self.sync_last_error_label.setWordWrap(True)
+        status_group_layout.addWidget(self.sync_last_error_label)
+        status_group_layout.addStretch()
+
+        content_layout.addWidget(status_group, 1)
+
+        layout.addLayout(content_layout)
+
+        history_group = QGroupBox("동기화 히스토리")
         history_layout = QVBoxLayout()
         history_group.setLayout(history_layout)
 
         self.sync_history_table = QTableWidget()
         self.sync_history_table.setColumnCount(5)
-        self.sync_history_table.setHorizontalHeaderLabels(["Time", "Table", "Mode", "Rows", "Status"])
-        self.sync_history_table.setColumnWidth(0, 150)
-        self.sync_history_table.setColumnWidth(1, 150)
-        self.sync_history_table.setColumnWidth(2, 120)
-        self.sync_history_table.setColumnWidth(3, 100)
-        self.sync_history_table.setColumnWidth(4, 100)
+        self.sync_history_table.setHorizontalHeaderLabels(["시간", "테이블", "모드", "적용 건수", "상태"])
+        header = self.sync_history_table.horizontalHeader()
+        header.setStretchLastSection(True)
+        header.setDefaultSectionSize(140)
+        self.sync_history_table.verticalHeader().setVisible(False)
+        self.sync_history_table.setAlternatingRowColors(True)
+        self.sync_history_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.sync_history_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         history_layout.addWidget(self.sync_history_table)
 
         layout.addWidget(history_group)
 
+        self._reset_sync_status_ui()
         self.tabs.addTab(tab, "4. Sync")
+
+
+    def _create_status_card(self, layout, title, initial_value):
+        """작은 지표 카드 위젯 생성"""
+        card = QFrame()
+        card.setObjectName("StatusCard")
+        card.setStyleSheet(self.status_card_style_template.format(bg="#ffffff"))
+        card_layout = QVBoxLayout(card)
+        card_layout.setSpacing(6)
+
+        title_label = QLabel(title)
+        title_label.setStyleSheet("color: #7f8c8d; font-size: 12px; font-weight: 600;")
+        value_label = QLabel(initial_value)
+        value_label.setStyleSheet("color: #2f3640; font-size: 22px; font-weight: 700;")
+
+        card_layout.addWidget(title_label)
+        card_layout.addWidget(value_label)
+        card_layout.addStretch()
+
+        layout.addWidget(card)
+        return value_label, card
+
+    def _create_status_caption(self, text):
+        """상태 설명 레이블 생성"""
+        label = QLabel(text)
+        label.setStyleSheet("color: #7f8c8d; font-size: 12px; font-weight: 600;")
+        return label
+
+    def _reset_sync_status_ui(self):
+        """동기화 상태 UI 초기화"""
+        self._set_status_card_state(False, "대기 중")
+        self.sync_current_table_value.setText("미선택")
+        self.sync_total_runs_value.setText("0회")
+        self.sync_success_rate_value.setText("—")
+        self.sync_success_breakdown_value.setText("0 / 0")
+        self.sync_last_sync_value.setText("—")
+        self.sync_next_sync_value.setText("—")
+        self._set_last_error(None)
+
+    def _set_status_card_state(self, is_running, label=None):
+        """상태 카드 색상 및 텍스트 업데이트"""
+        if label is None:
+            label = "진행 중" if is_running else "대기 중"
+        background = "#e8f5e9" if is_running else "#ffffff"
+        text_color = "#27ae60" if is_running else "#7f8c8d"
+
+        self.sync_status_card.setStyleSheet(self.status_card_style_template.format(bg=background))
+        self.sync_state_value.setText(label)
+        self.sync_state_value.setStyleSheet(f"color: {text_color}; font-size: 22px; font-weight: 700;")
+
+    def _set_last_error(self, error_text):
+        """최근 오류 텍스트 및 스타일 적용"""
+        if error_text:
+            self.sync_last_error_label.setText(error_text)
+            self.sync_last_error_label.setStyleSheet(self.sync_error_style_alert)
+        else:
+            self.sync_last_error_label.setText("최근 오류가 없습니다.")
+            self.sync_last_error_label.setStyleSheet(self.sync_error_style_muted)
+
+    def _format_iso_datetime(self, iso_value):
+        """ISO 형식 문자열을 사람이 읽기 쉬운 형태로 변환"""
+        if not iso_value:
+            return "—"
+        from datetime import datetime
+        try:
+            dt = datetime.fromisoformat(iso_value)
+            return dt.strftime('%Y-%m-%d %H:%M:%S')
+        except ValueError:
+            return iso_value
 
     def create_log_tab(self):
         """로그 탭"""
@@ -1320,6 +1454,16 @@ class MainWindow(QMainWindow):
 
             # 상태 업데이트 타이머 시작
             self.sync_status_timer.start(5000)  # 5초마다 업데이트
+            self._set_status_card_state(True)
+            self.sync_current_table_value.setText(table_name)
+            totals = self.sync_manager.status
+            self.sync_total_runs_value.setText(f"{totals.total_syncs:,}회")
+            self.sync_success_rate_value.setText("—")
+            self.sync_success_breakdown_value.setText(f"{totals.successful_syncs:,} / {totals.failed_syncs:,}")
+            self.sync_last_sync_value.setText("—")
+            self.sync_next_sync_value.setText("—")
+            self._set_last_error(None)
+            self.update_sync_status()
 
             self.log(f"동기화 시작: {table_name}, 간격: {interval_minutes}분, 모드: {sync_mode.value}")
             QMessageBox.information(
@@ -1359,9 +1503,9 @@ class MainWindow(QMainWindow):
             self.start_sync_btn.setEnabled(True)
             self.stop_sync_btn.setEnabled(False)
 
-            self.log("동기화 중지됨")
-            self.sync_status_text.setText("동기화가 중지되었습니다.")
-
+            self.log("동기화 중지를 요청했습니다.")
+            self.update_sync_status()
+            self._set_status_card_state(False, "중지됨")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"동기화 중지 오류:\n{str(e)}")
 
@@ -1466,32 +1610,36 @@ class MainWindow(QMainWindow):
             self.log(f"누락 데이터 동기화 오류: {str(e)}")
 
     def update_sync_status(self):
-        """동기화 상태 업데이트"""
+        """동기화 상태 갱신"""
         if not self.sync_manager:
             return
 
         status = self.sync_manager.get_status()
 
-        # 상태 텍스트 생성
-        status_text = f"동기화 상태: {'실행 중' if status['is_running'] else '중지됨'}\n"
-        status_text += f"현재 테이블: {status['current_table'] or 'N/A'}\n\n"
-        status_text += f"총 동기화 횟수: {status['total_syncs']}\n"
-        status_text += f"성공: {status['successful_syncs']}\n"
-        status_text += f"실패: {status['failed_syncs']}\n"
+        self._set_status_card_state(status['is_running'])
 
-        if status['total_syncs'] > 0:
-            status_text += f"성공률: {status['success_rate']:.1f}%\n"
+        if status['current_table']:
+            self.sync_current_table_value.setText(status['current_table'])
+        else:
+            fallback = "대기 중" if status['is_running'] else "미선택"
+            self.sync_current_table_value.setText(fallback)
 
-        if status['last_sync_time']:
-            status_text += f"\n마지막 동기화: {status['last_sync_time']}\n"
+        total_syncs = status['total_syncs']
+        self.sync_total_runs_value.setText(f"{total_syncs:,}회")
 
-        if status['next_sync_time']:
-            status_text += f"다음 동기화: {status['next_sync_time']}\n"
+        if total_syncs > 0:
+            self.sync_success_rate_value.setText(f"{status['success_rate']:.1f}%")
+        else:
+            self.sync_success_rate_value.setText("—")
 
-        if status['last_error']:
-            status_text += f"\n최근 오류:\n{status['last_error'][:200]}"
+        self.sync_success_breakdown_value.setText(
+            f"{status['successful_syncs']:,} / {status['failed_syncs']:,}"
+        )
 
-        self.sync_status_text.setText(status_text)
+        self.sync_last_sync_value.setText(self._format_iso_datetime(status['last_sync_time']))
+        self.sync_next_sync_value.setText(self._format_iso_datetime(status['next_sync_time']))
+
+        self._set_last_error(status['last_error'])
 
     def on_sync_completed(self, status: SyncStatus, result: dict):
         """동기화 완료 콜백"""
