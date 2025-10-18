@@ -1,0 +1,27 @@
+# Database Drivers
+oracledb
+psycopg2-binary
+
+# GUI Framework
+PyQt5
+PyQt5-Qt5
+PyQt5-sip
+
+# Security & Encryption
+cryptography
+keyring
+
+# Configuration & Data
+python-dotenv
+PyYAML
+
+# Logging
+colorlog
+
+# Development & Testing
+pytest
+pytest-qt
+pytest-cov
+black
+flake8
+mypy

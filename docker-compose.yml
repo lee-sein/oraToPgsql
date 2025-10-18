@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  # Oracle 21c Express Edition
+  oracle21:
+    image: gvenzl/oracle-xe:21-slim
+    container_name: oracle21c
+    ports:
+      - "1521:1521"
+    environment:
+      ORACLE_PASSWORD: oracle
+      ORACLE_DATABASE: XEPDB1
+    volumes:
+      - oracle21_data:/opt/oracle/oradata
+    healthcheck:
+      test: ["CMD", "sqlplus", "-L", "system/oracle@//localhost:1521/XE", "@/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # PostgreSQL 16
+  postgres:
+    image: postgres:16
+    container_name: postgres16
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  oracle21_data:
+  postgres_data:
